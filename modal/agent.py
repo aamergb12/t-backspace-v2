@@ -1,4 +1,6 @@
-# Import Modal and required libraries
+# Use your original agent.py that was working last night
+# This is the clean version without debug logs
+
 import modal
 import subprocess
 import os
@@ -38,12 +40,6 @@ app = modal.App("tiny-backspace-v2")
 async def run_coding_agent(repo_url: str, prompt: str, session_id: str):
     """
     Run Claude Code using the OFFICIAL Claude Code Python SDK
-    
-    This uses Anthropic's official claude-code-sdk package:
-    - Real Claude Code capabilities
-    - Proper session management
-    - Built-in tool orchestration
-    - Advanced permission handling
     """
     
     def log_to_convex(log_type: str, message: str):
@@ -138,8 +134,6 @@ async def run_coding_agent(repo_url: str, prompt: str, session_id: str):
             
             # Collect all messages from Claude Code
             messages = []
-            files_created = []
-            files_modified = []
             total_cost = 0.0
             
             try:
@@ -155,82 +149,31 @@ async def run_coding_agent(repo_url: str, prompt: str, session_id: str):
                         class_name = message.__class__.__name__
                         
                         if class_name == "SystemMessage":
-                            # System initialization message
-                            if hasattr(message, 'data'):
-                                data = message.data
-                                if data.get('subtype') == 'init':
-                                    tools = data.get('tools', [])
-                                    session_id = data.get('session_id', 'unknown')
-                                    log_to_convex("claude_init", f"Claude Code initialized with {len(tools)} tools: {', '.join(tools[:5])}")
-                                    log_to_convex("claude_session", f"Session ID: {session_id}")
+                            if hasattr(message, 'data') and message.data.get('subtype') == 'init':
+                                tools = message.data.get('tools', [])
+                                log_to_convex("claude_init", f"Claude Code initialized with {len(tools)} tools")
                         
                         elif class_name == "AssistantMessage":
-                            # Claude's responses and tool calls
                             if hasattr(message, 'content'):
                                 for content_block in message.content:
                                     if hasattr(content_block, '__class__'):
                                         if content_block.__class__.__name__ == "TextBlock":
                                             text = getattr(content_block, 'text', '')
-                                            log_to_convex("claude_response", f"Claude: {text[:150]}")
+                                            log_to_convex("claude_response", f"Claude: {text[:100]}")
                                         
                                         elif content_block.__class__.__name__ == "ToolUseBlock":
                                             tool_name = getattr(content_block, 'name', 'unknown')
-                                            tool_input = getattr(content_block, 'input', {})
-                                            
-                                            # Log tool usage with details
-                                            if tool_name == "Read":
-                                                file_path = tool_input.get('file_path', '')
-                                                log_to_convex("claude_tool_read", f"Reading file: {file_path}")
-                                            elif tool_name == "Write":
-                                                file_path = tool_input.get('file_path', '')
-                                                log_to_convex("claude_tool_write", f"Writing file: {file_path}")
-                                            elif tool_name == "LS":
-                                                path = tool_input.get('path', '')
-                                                log_to_convex("claude_tool_ls", f"Listing directory: {path}")
-                                            elif tool_name == "Bash":
-                                                command = tool_input.get('command', '')
-                                                log_to_convex("claude_tool_bash", f"Running command: {command}")
-                                            else:
-                                                log_to_convex("claude_tool", f"Tool: {tool_name} - {str(tool_input)[:100]}")
-                        
-                        elif class_name == "UserMessage":
-                            # Tool results and user inputs
-                            if hasattr(message, 'content'):
-                                for content_item in message.content:
-                                    if isinstance(content_item, dict) and content_item.get('type') == 'tool_result':
-                                        tool_id = content_item.get('tool_use_id', '')
-                                        result = content_item.get('content', '')[:200]
-                                        log_to_convex("claude_tool_result", f"Tool result: {result}")
+                                            log_to_convex("claude_tool", f"Tool: {tool_name}")
                         
                         elif class_name == "ResultMessage":
-                            # Final results with statistics
-                            log_to_convex("claude_result", f"Claude Code completed with {message.num_turns} turns")
-                            
-                            # Extract detailed statistics
-                            stats = {
-                                'cost_usd': getattr(message, 'total_cost_usd', 0),
-                                'duration_ms': getattr(message, 'duration_ms', 0),
-                                'api_duration_ms': getattr(message, 'duration_api_ms', 0),
-                                'turns': getattr(message, 'num_turns', 0),
-                                'success': getattr(message, 'subtype', '') == 'success'
-                            }
-                            
-                            log_to_convex("claude_stats", f"Statistics: {json.dumps(stats)}")
-                            
-                            if hasattr(message, 'result'):
-                                log_to_convex("claude_final_result", f"Result: {message.result}")
-                            
-                            # Store final statistics for return
-                            total_cost = getattr(message, 'total_cost_usd', 0.0)
-                    
-                    else:
-                        log_to_convex("claude_unknown_message", f"Unknown message type: {type(message)}")
+                            if hasattr(message, 'num_turns'):
+                                log_to_convex("claude_result", f"Completed with {message.num_turns} turns")
+                            if hasattr(message, 'total_cost_usd'):
+                                total_cost = message.total_cost_usd
+                                log_to_convex("claude_cost", f"Cost: ${total_cost:.4f}")
                 
                 log_to_convex("claude_success", f"Claude Code SDK completed with {len(messages)} messages")
-                
-                # Get the final result
-                result_message = next((msg for msg in reversed(messages) if hasattr(msg, 'type') and msg.type == "result"), None)
-                claude_output = getattr(result_message, 'result', 'Claude Code SDK session completed') if result_message else "Claude Code SDK session completed"
+                claude_output = "Claude Code completed successfully"
                 
             except Exception as claude_error:
                 log_to_convex("claude_error", f"Claude Code SDK error: {str(claude_error)}")
@@ -239,26 +182,20 @@ async def run_coding_agent(repo_url: str, prompt: str, session_id: str):
             # STEP 6: Check for changes and commit
             log_to_convex("git_check", "Checking for changes...")
             
-            # Check git status
             git_status = subprocess.run(["git", "status", "--porcelain"], 
                                       capture_output=True, text=True)
             
             if git_status.stdout.strip():
                 log_to_convex("changes_found", f"Found changes: {len(git_status.stdout.strip().split())} files")
                 
-                # Add all changes
                 subprocess.run(["git", "add", "-A"], check=False)
                 
-                # Create detailed commit message
                 commit_message = f"""Implement: {prompt}
 
-Implemented by Claude Code SDK (Official Anthropic Product)
+Implemented by Claude Code SDK
 Session: {session_id}
 Messages: {len(messages)}
 Cost: ${total_cost:.4f}
-
-Changes:
-{git_status.stdout.strip()}
 
 Summary: {claude_output}"""
                 
@@ -273,16 +210,14 @@ Summary: {claude_output}"""
                     
             else:
                 log_to_convex("no_changes", "No changes detected from Claude Code")
-                # Create empty commit to document the session
                 subprocess.run([
                     "git", "commit", "--allow-empty", "-m",
-                    f"Claude Code SDK session: {prompt}\n\nSession: {session_id}\nMessages: {len(messages)}\nResult: {claude_output}"
+                    f"Claude Code SDK session: {prompt}\n\nSession: {session_id}"
                 ], check=False)
             
             # STEP 7: Push and create PR
             log_to_convex("pr_start", "Creating pull request...")
             
-            # Push the branch
             push_result = subprocess.run([
                 "git", "push", "origin", branch_name
             ], capture_output=True, text=True, check=False)
@@ -290,7 +225,6 @@ Summary: {claude_output}"""
             if push_result.returncode == 0:
                 log_to_convex("push_success", f"Successfully pushed branch: {branch_name}")
                 
-                # Create PR using GitHub CLI
                 pr_title = f"Claude Code SDK: {prompt}"
                 pr_body = f"""## Implementation by Claude Code SDK
 
@@ -305,20 +239,6 @@ Summary: {claude_output}"""
 - **Branch**: {branch_name}
 - **Messages Processed**: {len(messages)}
 - **Total Cost**: ${total_cost:.4f} USD
-- **Sandbox**: Modal containerized environment
-- **Observability**: Real-time logging via Convex
-
-**Files Changed**:
-```
-{git_status.stdout.strip() if git_status.stdout.strip() else 'No file changes detected'}
-```
-
-**Powered by**:
-- Claude Code SDK (`claude-code-sdk` Python package)
-- Official Anthropic Claude Code capabilities
-- Modal for secure sandboxed execution
-- Convex for real-time observability
-- GitHub CLI for automated PR creation
 
 Generated automatically by Tiny Backspace coding agent.
 """
@@ -339,13 +259,7 @@ Generated automatically by Tiny Backspace coding agent.
                         "prUrl": pr_url,
                         "message": f"Claude Code SDK successfully implemented: {prompt}",
                         "branch": branch_name,
-                        "summary": claude_output,
-                        "stats": {
-                            "messages": len(messages),
-                            "totalCostUsd": total_cost,
-                            "filesCreated": files_created,
-                            "filesModified": files_modified
-                        }
+                        "summary": claude_output
                     }
                 else:
                     error_msg = f"Failed to create PR: {pr_result.stderr}"
@@ -357,7 +271,7 @@ Generated automatically by Tiny Backspace coding agent.
                 return {"success": False, "error": error_msg}
     
     except ImportError as import_error:
-        error_msg = f"Claude Code SDK not available: {str(import_error)}. Make sure claude-code-sdk is installed."
+        error_msg = f"Claude Code SDK not available: {str(import_error)}"
         log_to_convex("sdk_missing", error_msg)
         return {"success": False, "error": error_msg}
     

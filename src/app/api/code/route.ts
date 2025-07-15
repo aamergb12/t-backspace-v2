@@ -1,8 +1,5 @@
-// Import Next.js request/response types
 import { NextRequest, NextResponse } from 'next/server';
-// Import Convex client to log events
 import { ConvexHttpClient } from 'convex/browser';
-// Import the generated API types
 import { api } from '../../../../convex/_generated/api';
 
 // Create Convex client using environment variable
@@ -14,7 +11,6 @@ export async function POST(req: NextRequest) {
     // Parse the request body to get repo URL and prompt
     const { repoUrl, prompt } = await req.json();
     
-    // Generate unique session ID for this coding session
     const sessionId = `session_${Date.now()}_${Math.random().toString(36).substring(7)}`;
     
     // Log that we're starting a new coding session
@@ -35,8 +31,8 @@ export async function POST(req: NextRequest) {
         '--prompt', prompt,
         '--session-id', sessionId
       ], {
-        detached: true,    // Run in background
-        stdio: 'ignore'    // Don't wait for completion
+        detached: true,    
+        stdio: 'ignore'   
       });
       
       // Don't wait for Modal to complete, just trigger it
@@ -58,7 +54,6 @@ export async function POST(req: NextRequest) {
       });
       
     } catch (modalError: any) {
-      // If Modal fails to start, log error
       await convex.mutation(api.logs.add, {
         type: "modal_error",
         message: `Failed to start Modal agent: ${modalError?.message || 'Unknown error'}`,
