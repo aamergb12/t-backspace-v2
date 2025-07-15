@@ -1,5 +1,3 @@
-# Use your original agent.py that was working last night
-# This is the clean version without debug logs
 
 import modal
 import subprocess
@@ -121,7 +119,7 @@ async def run_coding_agent(repo_url: str, prompt: str, session_id: str):
             
             # Create Claude Code options with proper permissions
             options = ClaudeCodeOptions(
-                max_turns=10,                           # Limit turns for safety
+                max_turns=50,                           # Limit turns for safety
                 cwd=Path(repo_path),                    # Set working directory to repo
                 allowed_tools=["Read", "Write", "Bash"], # Enable all necessary tools
                 permission_mode="acceptEdits"           # Auto-approve file edits
